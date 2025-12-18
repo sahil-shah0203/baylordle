@@ -83,6 +83,10 @@ function buildShareText(args: {
   return lines.join("\n");
 }
 
+function getStateKeyForDate(date: string) {
+  return `connections_state_${date}`;
+}
+
 export default function HomePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -104,6 +108,19 @@ export default function HomePage() {
       const res = await fetch("/api/puzzle/today", { cache: "no-store" });
       const data = await res.json();
       setPuzzle(data.puzzle);
+      const saved = localStorage.getItem(getStateKeyForDate(data.puzzle.date));
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved) as {
+            seed: number;
+            mistakesLeft: number;
+            solved: SolvedGroup[];
+          };
+          setSeed(parsed.seed ?? 0);
+          setMistakesLeft(parsed.mistakesLeft ?? 4);
+          setSolved(parsed.solved ?? []);
+        } catch {}
+      }
       setLoading(false);
     })();
   }, []);
@@ -206,6 +223,12 @@ export default function HomePage() {
     if (!puzzle) return;
     if (isGameOver) localStorage.setItem(getPlayedKeyForDate(puzzle.date), "true");
   }, [isGameOver, puzzle]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    const payload = { seed, mistakesLeft, solved };
+    localStorage.setItem(getStateKeyForDate(puzzle.date), JSON.stringify(payload));
+  }, [puzzle, seed, mistakesLeft, solved]);
 
   if (loading) {
     return (
