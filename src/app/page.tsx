@@ -31,13 +31,56 @@ const COLOR_CLASS: Record<Color, string> = {
   purple: "bg-purple-200",
 };
 
-function shuffle<T>(arr: T[]) {
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function seedFromDate(date: string) {
+  // "2025-12-18" -> 20251218
+  return Number(date.replaceAll("-", ""));
+}
+
+function seededShuffle<T>(arr: T[], seed: number) {
   const a = [...arr];
+  const rnd = mulberry32(seed);
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rnd() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+const COLOR_EMOJI: Record<Color, string> = {
+  yellow: "🟨",
+  green: "🟩",
+  blue: "🟦",
+  purple: "🟪",
+};
+
+function buildShareText(args: {
+  date: string;
+  solved: { color: Color }[];
+  mistakesLeft: number;
+}) {
+  const { date, solved, mistakesLeft } = args;
+  const mistakesUsed = 4 - mistakesLeft;
+
+  const lines: string[] = [];
+  lines.push("Baylordle Connections");
+  lines.push(date);
+
+  // one row per solved group, in the order they solved it
+  for (const g of solved) {
+    lines.push(`${COLOR_EMOJI[g.color]}${COLOR_EMOJI[g.color]}${COLOR_EMOJI[g.color]}${COLOR_EMOJI[g.color]}`);
+  }
+
+  lines.push(`Mistakes: ${mistakesUsed}`);
+  return lines.join("\n");
 }
 
 export default function HomePage() {
@@ -50,6 +93,7 @@ export default function HomePage() {
   const [solved, setSolved] = useState<SolvedGroup[]>([]);
   const [message, setMessage] = useState("");
   const [lockedOut, setLockedOut] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
 
@@ -71,10 +115,8 @@ export default function HomePage() {
 
   const allWords = useMemo(() => {
     if (!puzzle) return [];
-    const words = puzzle.groups.flatMap((g) => g.words);
-    // seed-based reshuffle
-    return shuffle(words.map(String));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const words = puzzle.groups.flatMap((g) => g.words).map(String);
+    return seededShuffle(words, seedFromDate(puzzle.date) + seed);
   }, [puzzle, seed]);
 
   const remainingWords = useMemo(() => {
@@ -135,13 +177,29 @@ export default function HomePage() {
     if (lockedOut || isGameOver) return;
     setSelected([]);
     setMessage("");
+    setCopied(false);
   }
 
   function shuffleNow() {
-    if (lockedOut || isGameOver) return;
-    setSeed((s) => s + 1);
+    if (lockedOut || isGameOver || !puzzle) return;
     setSelected([]);
     setMessage("");
+    setSeed((s) => s + 1);
+    setCopied(false);
+  }
+
+  async function copyResults() {
+    if (!puzzle) return;
+    const text = buildShareText({ date: puzzle.date, solved, mistakesLeft });
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // fallback: prompt (works even if clipboard blocked)
+      window.prompt("Copy your results:", text);
+    }
   }
 
   useEffect(() => {
@@ -247,6 +305,15 @@ export default function HomePage() {
             <div className="mt-2 text-neutral-600">
               Add more puzzles in <code className="px-1">src/data/puzzles.ts</code>.
             </div>
+            <button
+              onClick={copyResults}
+              className="mt-3 w-full rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800"
+            >
+              {copied ? "Copied!" : "Copy results"}
+            </button>
+            <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-800">
+              {buildShareText({ date: puzzle.date, solved, mistakesLeft })}
+            </pre>
           </div>
         )}
       </div>
