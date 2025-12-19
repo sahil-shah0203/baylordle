@@ -32,6 +32,38 @@ const COLOR_CLASS: Record<Color, string> = {
   purple: "bg-purple-200",
 };
 
+function ordinal(n: number) {
+  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
+function formatFullDate(dateStr: string) {
+  // dateStr = YYYY-MM-DD
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+
+  const weekday = date.toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "UTC",
+  });
+
+  const month = date.toLocaleDateString("en-US", {
+    month: "long",
+    timeZone: "UTC",
+  });
+
+  return `${weekday}, ${month} ${ordinal(d)}, ${y}`;
+}
+
 function mulberry32(seed: number) {
   return function () {
     let t = (seed += 0x6d2b79f5);
@@ -253,7 +285,9 @@ export default function HomePage() {
         <div className="mx-auto max-w-xl px-4 py-8">
           <header className="mb-6 flex items-baseline justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
+              <h1 className="text-xl font-semibold tracking-tight">
+                {formatFullDate(puzzle.date)}
+              </h1>
               <div className="text-xs text-neutral-500">{puzzle.date}</div>
             </div>
             <div className="text-sm text-neutral-600">Mistakes: {mistakesLeft}</div>
