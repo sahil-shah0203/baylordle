@@ -105,7 +105,7 @@ function buildShareText(args: {
   const mistakesUsed = 4 - mistakesLeft;
 
   const lines: string[] = [];
-  lines.push("Baylordle Connections");
+  lines.push("Baylordle");
   lines.push(date);
 
   // one row per solved group, in the order they solved it
@@ -400,7 +400,6 @@ export default function HomePage() {
               <h1 className="text-xl font-semibold tracking-tight">
                 {formatFullDate(puzzle.date)}
               </h1>
-              <div className="text-xs text-neutral-500">{puzzle.date}</div>
             </div>
             <MistakesDots mistakesLeft={mistakesLeft} />
           </header>
