@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getOrCreateDeviceId, getPlayedKeyForDate } from "@/lib/device";
 import DisclaimerGate from "@/components/DisclaimerGate";
+import Image from "next/image";
 
 type Color = "yellow" | "green" | "blue" | "purple";
 
@@ -147,6 +148,87 @@ function MistakesDots({ mistakesLeft }: { mistakesLeft: number }) {
   );
 }
 
+const CURRY_WIN_MESSAGES = [
+  "Buckets. Pure buckets.",
+  "Greatness looks familiar.",
+  "Locked in and lethal.",
+  "That was automatic.",
+  "You showed up today.",
+  "Elite focus.",
+  "Nothing but net.",
+  "Another day, another win.",
+  "Calm under pressure.",
+  "Championship habits.",
+];
+
+const CURRY_LOSE_MESSAGES = [
+  "Misses happen. Shooters shoot.",
+  "Come back stronger tomorrow.",
+  "Progress isn’t linear.",
+  "Every great run has bricks.",
+  "Film it. Fix it.",
+  "Losses teach more than wins.",
+  "You’ll get the next one.",
+  "Stay patient. Stay hungry.",
+  "Trust the process.",
+  "Reset and reload.",
+];
+
+function CurryCongrats({
+  show,
+  didWin,
+  dateSeed,
+}: {
+  show: boolean;
+  didWin: boolean;
+  dateSeed: number;
+}) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (show) setMounted(true);
+    else setMounted(false);
+  }, [show]);
+
+  if (!show) return null;
+
+  const messages = didWin ? CURRY_WIN_MESSAGES : CURRY_LOSE_MESSAGES;
+  const msg = messages[dateSeed % messages.length];
+  const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+      <div className="absolute inset-0 bg-black/10" />
+
+      <div
+        className={[
+          "absolute right-0 top-1/2 -translate-y-1/2",
+          "w-[320px] sm:w-[380px]",
+          "transition-transform duration-700 ease-out",
+          mounted ? "translate-x-0" : "translate-x-full",
+        ].join(" ")}
+      >
+        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden">
+          <div className="relative h-[260px] w-full">
+            <Image
+              src={imgSrc}
+              alt="Stephen Curry"
+              fill
+              className="object-cover"
+              priority
+            />
+          </div>
+
+          <div className="p-4">
+            <div className="text-sm font-semibold text-neutral-900">{msg}</div>
+            <div className="mt-1 text-xs text-neutral-500">See you tomorrow.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -160,6 +242,9 @@ export default function HomePage() {
   const [copied, setCopied] = useState(false);
 
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
+
+  const didWin = solved.length === 4;
+  const dateSeed = puzzle ? seedFromDate(puzzle.date) : 0;
 
   useEffect(() => {
     getOrCreateDeviceId();
@@ -388,9 +473,6 @@ export default function HomePage() {
           {isGameOver && (
             <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-4 text-sm">
               <div className="font-semibold">{solved.length === 4 ? "You solved it 🎉" : "Game over"}</div>
-              <div className="mt-2 text-neutral-600">
-                Add more puzzles in <code className="px-1">src/data/puzzles.ts</code>.
-              </div>
               <button
                 onClick={copyResults}
                 className="mt-3 w-full rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800"
@@ -403,6 +485,7 @@ export default function HomePage() {
             </div>
           )}
         </div>
+        <CurryCongrats show={isGameOver} didWin={didWin} dateSeed={dateSeed} />
       </main>
     </DisclaimerGate>
   );
