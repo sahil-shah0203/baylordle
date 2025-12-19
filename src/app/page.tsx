@@ -120,6 +120,33 @@ function getStateKeyForDate(date: string) {
   return `connections_state_${date}`;
 }
 
+function MistakesDots({ mistakesLeft }: { mistakesLeft: number }) {
+  const total = 4;
+  const used = total - mistakesLeft;
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="text-sm text-neutral-600">Mistakes</div>
+      <div className="flex gap-1.5">
+        {Array.from({ length: total }).map((_, i) => {
+          const isUsed = i < used;
+          return (
+            <span
+              key={i}
+              className={[
+                "inline-block h-2.5 w-2.5 rounded-full border",
+                isUsed
+                  ? "bg-neutral-200 border-neutral-300"
+                  : "bg-neutral-900 border-neutral-900",
+              ].join(" ")}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -290,7 +317,7 @@ export default function HomePage() {
               </h1>
               <div className="text-xs text-neutral-500">{puzzle.date}</div>
             </div>
-            <div className="text-sm text-neutral-600">Mistakes: {mistakesLeft}</div>
+            <MistakesDots mistakesLeft={mistakesLeft} />
           </header>
 
           {lockedOut && (
