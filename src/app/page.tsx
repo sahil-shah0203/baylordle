@@ -275,6 +275,9 @@ export default function HomePage() {
   const didWin = solved.length === 4;
   const dateSeed = puzzle ? seedFromDate(puzzle.date) : 0;
 
+  const [wrongPulse, setWrongPulse] = useState(0);
+  const [wrongFlash, setWrongFlash] = useState(false);
+
   useEffect(() => {
     getOrCreateDeviceId();
     (async () => {
@@ -360,6 +363,9 @@ export default function HomePage() {
       return overlap === 3;
     });
 
+    setWrongPulse((x) => x + 1);
+    setWrongFlash(true);
+    setTimeout(() => setWrongFlash(false), 220);
     setMistakesLeft((m) => Math.max(0, m - 1));
     setMessage(oneAway ? "One away…" : "Nope.");
   }
@@ -453,7 +459,7 @@ export default function HomePage() {
               const isSelected = selected.includes(word);
               return (
                 <button
-                  key={word}
+                  key={`${word}-${selected.includes(word) ? wrongPulse : 0}`}
                   onClick={() => toggleWord(word)}
                   className={[
                     "rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
@@ -461,6 +467,8 @@ export default function HomePage() {
                     isSelected
                       ? "bg-neutral-900 text-white border-neutral-900"
                       : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
+                    isSelected && wrongFlash ? "baylordle-wrongflash" : "",
+                    isSelected && wrongPulse ? "baylordle-shake" : "",
                   ].join(" ")}
                 >
                   {word}
