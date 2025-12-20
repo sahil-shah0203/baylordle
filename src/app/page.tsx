@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { getOrCreateDeviceId, getPlayedKeyForDate } from "@/lib/device";
 import DisclaimerGate from "@/components/DisclaimerGate";
 import Image from "next/image";
-import type { Metadata } from "next";
 
 type Color = "yellow" | "green" | "blue" | "purple";
 
@@ -228,14 +227,6 @@ function CurryCongrats({
       </div>
     </div>
   );
-}
-
-export async function generateMetadata(): Promise<Metadata> {
-  return {
-    title: "Today's Puzzle",
-    description:
-      "Solve today's Baylordle connections puzzle.",
-  };
 }
 
 export default function HomePage() {
