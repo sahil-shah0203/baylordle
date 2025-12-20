@@ -174,30 +174,49 @@ const CURRY_LOSE_MESSAGES = [
   "Reset and reload.",
 ];
 
+function getCurryDismissKey(dateStr: string) {
+  return `baylordle_curry_dismissed_${dateStr}`;
+}
+
 function CurryCongrats({
   show,
   didWin,
   dateSeed,
+  dateStr,
 }: {
   show: boolean;
   didWin: boolean;
   dateSeed: number;
+  dateStr: string;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (show) setMounted(true);
-    else setMounted(false);
-  }, [show]);
+    // Load dismissal state for this date
+    const v = localStorage.getItem(getCurryDismissKey(dateStr)) === "true";
+    setDismissed(v);
+  }, [dateStr]);
 
-  if (!show) return null;
+  useEffect(() => {
+    if (show && !dismissed) setMounted(true);
+    else setMounted(false);
+  }, [show, dismissed]);
+
+  if (!show || dismissed) return null;
 
   const messages = didWin ? CURRY_WIN_MESSAGES : CURRY_LOSE_MESSAGES;
   const msg = messages[dateSeed % messages.length];
   const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
 
+  function close() {
+    localStorage.setItem(getCurryDismissKey(dateStr), "true");
+    setDismissed(true);
+  }
+
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden">
+      {/* click-blocking overlay but allow dismissal */}
       <div className="absolute inset-0 bg-black/10" />
 
       <div
@@ -208,7 +227,7 @@ function CurryCongrats({
           mounted ? "translate-x-0" : "translate-x-full",
         ].join(" ")}
       >
-        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden">
+        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden pointer-events-auto">
           <div className="relative h-[260px] w-full">
             <Image
               src={imgSrc}
@@ -217,6 +236,16 @@ function CurryCongrats({
               className="object-cover"
               priority
             />
+
+            {/* Close button */}
+            <button
+              onClick={close}
+              className="absolute right-2 top-2 h-8 w-8 rounded-full bg-white/90 text-neutral-800 border border-neutral-200 hover:bg-white flex items-center justify-center"
+              aria-label="Close"
+              type="button"
+            >
+              ✕
+            </button>
           </div>
 
           <div className="p-4">
@@ -484,7 +513,14 @@ export default function HomePage() {
             </div>
           )}
         </div>
-        <CurryCongrats show={isGameOver} didWin={didWin} dateSeed={dateSeed} />
+        {puzzle && (
+          <CurryCongrats
+            show={isGameOver}
+            didWin={didWin}
+            dateSeed={dateSeed}
+            dateStr={puzzle.date}
+          />
+        )}
       </main>
     </DisclaimerGate>
   );
