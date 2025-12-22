@@ -211,7 +211,15 @@ function CurryCongrats({
   const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
 
   function close() {
-    localStorage.setItem(getCurryDismissKey(dateStr), "true");
+    useEffect(() => {
+      if (show) {
+        setMounted(true);
+        const wasDismissed = localStorage.getItem(getCurryDismissKey(dateStr)) === "true";
+        setDismissed(wasDismissed);
+      } else {
+        setMounted(false);
+      }
+    }, [show, dateStr]);
     setDismissed(true);
   }
 
@@ -239,7 +247,7 @@ function CurryCongrats({
             <button
               type="button"
               aria-label="Close"
-              onClick={() => setDismissed(true)}
+              onClick={close}
               className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-neutral-800 shadow hover:bg-white"
             >
               X
@@ -549,7 +557,12 @@ export default function HomePage() {
             </div>
           )}
         </div>
-        <CurryCongrats show={isGameOver} didWin={didWin} dateSeed={dateSeed} />
+        <CurryCongrats
+          show={isGameOver}
+          didWin={didWin}
+          dateSeed={dateSeed}
+          dateStr={puzzle.date}
+        />
         <button
           type="button"
           aria-label="Easter egg trigger"
