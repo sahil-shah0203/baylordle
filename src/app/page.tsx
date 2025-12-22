@@ -177,14 +177,20 @@ const CURRY_LOSE_MESSAGES = [
   "Reset and reload.",
 ];
 
+function getCurryDismissKey(dateStr: string) {
+  return `baylordle_curry_dismissed_${dateStr}`;
+}
+
 function CurryCongrats({
   show,
   didWin,
   dateSeed,
+  dateStr,
 }: {
   show: boolean;
   didWin: boolean;
   dateSeed: number;
+  dateStr: string;
 }) {
   const [mounted, setMounted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -204,6 +210,11 @@ function CurryCongrats({
   const msg = messages[dateSeed % messages.length];
   const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
 
+  function close() {
+    localStorage.setItem(getCurryDismissKey(dateStr), "true");
+    setDismissed(true);
+  }
+
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-black/10" />
@@ -216,7 +227,7 @@ function CurryCongrats({
           mounted ? "translate-x-0" : "translate-x-full",
         ].join(" ")}
       >
-        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden">
+        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden pointer-events-auto">
           <div className="relative h-[260px] w-full">
             <Image
               src={imgSrc}
@@ -265,6 +276,9 @@ export default function HomePage() {
 
   const didWin = solved.length === 4;
   const dateSeed = puzzle ? seedFromDate(puzzle.date) : 0;
+
+  const [wrongPulse, setWrongPulse] = useState(0);
+  const [wrongFlash, setWrongFlash] = useState(false);
 
   useEffect(() => {
     getOrCreateDeviceId();
@@ -360,6 +374,9 @@ export default function HomePage() {
       return overlap === 3;
     });
 
+    setWrongPulse((x) => x + 1);
+    setWrongFlash(true);
+    setTimeout(() => setWrongFlash(false), 220);
     setMistakesLeft((m) => Math.max(0, m - 1));
     setMessage(oneAway ? "One away…" : "Nope.");
     if (!oneAway) {
@@ -469,7 +486,7 @@ export default function HomePage() {
               const isSelected = selected.includes(word);
               return (
                 <button
-                  key={word}
+                  key={`${word}-${selected.includes(word) ? wrongPulse : 0}`}
                   onClick={() => toggleWord(word)}
                   className={[
                     "rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
@@ -478,6 +495,8 @@ export default function HomePage() {
                     isSelected
                       ? "bg-neutral-900 text-white border-neutral-900"
                       : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
+                    isSelected && wrongFlash ? "baylordle-wrongflash" : "",
+                    isSelected && wrongPulse ? "baylordle-shake" : "",
                   ].join(" ")}
                 >
                   {word}
