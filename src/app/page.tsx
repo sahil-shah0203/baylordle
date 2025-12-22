@@ -247,7 +247,7 @@ function CurryCongrats({
             <button
               type="button"
               aria-label="Close"
-              onClick={close}
+              onClick={() => setDismissed(true)}
               className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-neutral-800 shadow hover:bg-white"
             >
               X
