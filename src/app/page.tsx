@@ -103,10 +103,12 @@ function buildShareText(args: {
 }) {
   const { date, solved, mistakesLeft } = args;
   const mistakesUsed = 4 - mistakesLeft;
+  const [y, m, d] = date.split("-").map(Number);
+  const shareDate = `${m}/${d}/${y}`;
 
   const lines: string[] = [];
   lines.push("Baylordle");
-  lines.push(date);
+  lines.push(shareDate);
 
   // one row per solved group, in the order they solved it
   for (const g of solved) {
@@ -114,6 +116,7 @@ function buildShareText(args: {
   }
 
   lines.push(`Mistakes: ${mistakesUsed}`);
+  lines.push("baylordle.com");
   return lines.join("\n");
 }
 
@@ -184,20 +187,25 @@ function CurryCongrats({
   dateSeed: number;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    if (show) setMounted(true);
-    else setMounted(false);
+    if (show) {
+      setMounted(true);
+      setDismissed(false);
+    } else {
+      setMounted(false);
+    }
   }, [show]);
 
-  if (!show) return null;
+  if (!show || dismissed) return null;
 
   const messages = didWin ? CURRY_WIN_MESSAGES : CURRY_LOSE_MESSAGES;
   const msg = messages[dateSeed % messages.length];
   const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-black/10" />
 
       <div
@@ -217,6 +225,14 @@ function CurryCongrats({
               className="object-cover"
               priority
             />
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setDismissed(true)}
+              className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-neutral-800 shadow hover:bg-white"
+            >
+              X
+            </button>
           </div>
 
           <div className="p-4">
@@ -240,6 +256,10 @@ export default function HomePage() {
   const [message, setMessage] = useState("");
   const [lockedOut, setLockedOut] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [guessedSets, setGuessedSets] = useState<string[]>([]);
+  const [shakeSelected, setShakeSelected] = useState(false);
+  const [easterClicks, setEasterClicks] = useState(0);
+  const [showEasterEgg, setShowEasterEgg] = useState(false);
 
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
 
@@ -260,10 +280,12 @@ export default function HomePage() {
             seed: number;
             mistakesLeft: number;
             solved: SolvedGroup[];
+            guessedSets: string[];
           };
           setSeed(parsed.seed ?? 0);
           setMistakesLeft(parsed.mistakesLeft ?? 4);
           setSolved(parsed.solved ?? []);
+          setGuessedSets(parsed.guessedSets ?? []);
         } catch {}
       }
       setLoading(false);
@@ -311,6 +333,13 @@ export default function HomePage() {
 
     const picked = normalizeSet(selected);
 
+    if (guessedSets.includes(picked)) {
+      setMessage("Already guessed.");
+      return;
+    }
+
+    setGuessedSets((prev) => (prev.includes(picked) ? prev : [...prev, picked]));
+
     const match = puzzle.groups.find(
       (g) => normalizeSet(g.words as unknown as string[]) === picked
     );
@@ -333,6 +362,10 @@ export default function HomePage() {
 
     setMistakesLeft((m) => Math.max(0, m - 1));
     setMessage(oneAway ? "One away…" : "Nope.");
+    if (!oneAway) {
+      setShakeSelected(true);
+      setTimeout(() => setShakeSelected(false), 450);
+    }
   }
 
   function clear() {
@@ -348,6 +381,18 @@ export default function HomePage() {
     setMessage("");
     setSeed((s) => s + 1);
     setCopied(false);
+  }
+
+  function handleEasterClick() {
+    if (showEasterEgg) return;
+    setEasterClicks((c) => {
+      const next = c + 1;
+      if (next >= 10) {
+        setShowEasterEgg(true);
+        return 10;
+      }
+      return next;
+    });
   }
 
   async function copyResults() {
@@ -371,9 +416,9 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!puzzle) return;
-    const payload = { seed, mistakesLeft, solved };
+    const payload = { seed, mistakesLeft, solved, guessedSets };
     localStorage.setItem(getStateKeyForDate(puzzle.date), JSON.stringify(payload));
-  }, [puzzle, seed, mistakesLeft, solved]);
+  }, [puzzle, seed, mistakesLeft, solved, guessedSets]);
 
   if (loading) {
     return (
@@ -393,7 +438,7 @@ export default function HomePage() {
 
   return (
     <DisclaimerGate>
-      <main className="min-h-screen bg-white text-neutral-900">
+      <main className="min-h-screen bg-white text-neutral-900 relative">
         <div className="mx-auto max-w-xl px-4 py-8">
           <header className="mb-6 flex items-baseline justify-between">
             <div>
@@ -429,6 +474,7 @@ export default function HomePage() {
                   className={[
                     "rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
                     "transition",
+                    isSelected && shakeSelected ? "shake" : "",
                     isSelected
                       ? "bg-neutral-900 text-white border-neutral-900"
                       : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
@@ -485,6 +531,30 @@ export default function HomePage() {
           )}
         </div>
         <CurryCongrats show={isGameOver} didWin={didWin} dateSeed={dateSeed} />
+        <button
+          type="button"
+          aria-label="Easter egg trigger"
+          onClick={handleEasterClick}
+          className="absolute bottom-0 left-0 h-1/4 w-1/4 opacity-0"
+        />
+        {showEasterEgg && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-lg rounded-3xl border border-neutral-200 bg-white p-6 shadow-lg">
+              <div className="text-sm text-neutral-800 leading-relaxed">
+                Hi Thara! Just wanted to say im so happy to have met you, and
+                love spending time with you. You are so caring, hard-working,
+                and beautiful. I was wondering if I could ask you a lil
+                question...
+              </div>
+              <button
+                onClick={() => setShowEasterEgg(false)}
+                className="mt-5 w-full rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </DisclaimerGate>
   );
