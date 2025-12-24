@@ -26,6 +26,253 @@ type SolvedGroup = {
   words: string[];
 };
 
+type PlayerStats = {
+  totalPlayed: number;
+  totalCompleted: number;
+  currentStreak: number;
+  longestStreak: number;
+  lastCompletedDate?: string; // YYYY-MM-DD
+  totalMistakesUsed: number;
+  totalSeconds: number;
+};
+
+const STATS_KEY = "baylordle_player_stats_v1";
+
+function loadStats(): PlayerStats {
+  try {
+    const raw = localStorage.getItem(STATS_KEY);
+    if (!raw) {
+      return {
+        totalPlayed: 0,
+        totalCompleted: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        totalMistakesUsed: 0,
+        totalSeconds: 0,
+      };
+    }
+    return JSON.parse(raw) as PlayerStats;
+  } catch {
+    return {
+      totalPlayed: 0,
+      totalCompleted: 0,
+      currentStreak: 0,
+      longestStreak: 0,
+      totalMistakesUsed: 0,
+      totalSeconds: 0,
+    };
+  }
+}
+
+function saveStats(s: PlayerStats) {
+  localStorage.setItem(STATS_KEY, JSON.stringify(s));
+}
+
+function formatDuration(totalSeconds: number) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${mm}:${String(ss).padStart(2, "0")}`;
+}
+
+function daysBetween(a: string, b: string) {
+  // a/b are YYYY-MM-DD (treat as UTC midnight to avoid tz drift)
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const da = Date.UTC(ay, am - 1, ad);
+  const db = Date.UTC(by, bm - 1, bd);
+  return Math.round((db - da) / (24 * 60 * 60 * 1000));
+}
+
+function getDebriefDismissKey(dateStr: string) {
+  return `baylordle_debrief_dismissed_${dateStr}`;
+}
+
+function DebriefModal({
+  open,
+  onClose,
+  puzzleDate,
+  didWin,
+  seconds,
+  mistakesLeft,
+  stats,
+  copied,
+  onCopy,
+}: {
+  open: boolean;
+  onClose: () => void;
+  puzzleDate: string;
+  didWin: boolean;
+  seconds: number;
+  mistakesLeft: number;
+  stats: PlayerStats | null;
+  copied: boolean;
+  onCopy: () => void;
+}) {
+  if (!open) return null;
+
+  const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
+  const mistakesUsed = 4 - mistakesLeft;
+
+  const completionPct = stats
+    ? Math.round((stats.totalCompleted / Math.max(1, stats.totalPlayed)) * 100)
+    : null;
+
+  const avgMistakes = stats
+    ? (stats.totalMistakesUsed / Math.max(1, stats.totalPlayed)).toFixed(1)
+    : null;
+
+  const avgTime = stats
+    ? formatDuration(stats.totalSeconds / Math.max(1, stats.totalPlayed))
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50">
+      {/* overlay */}
+      <button
+        className="absolute inset-0 bg-black/20"
+        aria-label="Close"
+        onClick={onClose}
+        type="button"
+      />
+
+      {/* modal */}
+      <div className="absolute inset-0 flex items-center justify-center px-4 py-6">
+        <div className="w-full max-w-xl rounded-3xl border border-neutral-200 bg-white shadow-xl overflow-hidden relative">
+          {/* close */}
+          <button
+            onClick={onClose}
+            className="absolute right-3 top-3 h-9 w-9 rounded-full bg-white/90 text-neutral-800 border border-neutral-200 hover:bg-white flex items-center justify-center z-10"
+            aria-label="Close"
+            type="button"
+          >
+            ✕
+          </button>
+
+          {/* header image */}
+          <div className="relative h-[180px] w-full">
+            <Image
+              src={imgSrc}
+              alt="Stephen Curry"
+              fill
+              className="object-cover"
+              priority
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+            <div className="absolute left-4 bottom-3 text-white">
+              <div className="text-lg font-semibold">
+                {didWin ? "Daily Debrief ✅" : "Daily Debrief"}
+              </div>
+              <div className="text-xs opacity-90">{puzzleDate}</div>
+            </div>
+          </div>
+
+          {/* body */}
+          <div className="p-4 text-sm">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Time
+                </div>
+                <div className="mt-1 text-lg font-semibold">
+                  {formatDuration(seconds)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Mistakes
+                </div>
+                <div className="mt-1 text-lg font-semibold">
+                  {mistakesUsed} / 4
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Completion
+                </div>
+                <div className="mt-1 text-lg font-semibold">
+                  {completionPct !== null ? `${completionPct}%` : "—"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Games Played
+                </div>
+                <div className="mt-1 text-lg font-semibold">
+                  {stats ? stats.totalPlayed : "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Current Streak
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {stats ? stats.currentStreak : "—"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Longest Streak
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {stats ? stats.longestStreak : "—"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Avg Mistakes
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {avgMistakes ?? "—"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Avg Time
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {avgTime ?? "—"}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-neutral-200 p-3">
+                <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+                  Result
+                </div>
+                <div className="mt-1 text-base font-semibold">
+                  {didWin ? "Completed" : "Not completed"}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onCopy}
+              className="mt-4 w-full rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800"
+            >
+              {copied ? "Copied!" : "Copy results"}
+            </button>
+
+            <div className="mt-2 text-center text-xs text-neutral-500">
+              Share today's results to your friends!
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const COLOR_CLASS: Record<Color, string> = {
   yellow: "bg-yellow-200",
   green: "bg-green-200",
@@ -177,97 +424,10 @@ const CURRY_LOSE_MESSAGES = [
   "Reset and reload.",
 ];
 
-function getCurryDismissKey(dateStr: string) {
-  return `baylordle_curry_dismissed_${dateStr}`;
-}
-
-function CurryCongrats({
-  show,
-  didWin,
-  dateSeed,
-  dateStr,
-}: {
-  show: boolean;
-  didWin: boolean;
-  dateSeed: number;
-  dateStr: string;
-}) {
-  const [mounted, setMounted] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-
-  useEffect(() => {
-    if (show) {
-      setMounted(true);
-      setDismissed(false);
-    } else {
-      setMounted(false);
-    }
-  }, [show]);
-
-  if (!show || dismissed) return null;
-
-  const messages = didWin ? CURRY_WIN_MESSAGES : CURRY_LOSE_MESSAGES;
-  const msg = messages[dateSeed % messages.length];
-  const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
-
-  function close() {
-    useEffect(() => {
-      if (show) {
-        setMounted(true);
-        const wasDismissed = localStorage.getItem(getCurryDismissKey(dateStr)) === "true";
-        setDismissed(wasDismissed);
-      } else {
-        setMounted(false);
-      }
-    }, [show, dateStr]);
-    setDismissed(true);
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
-      <div className="absolute inset-0 bg-black/10" />
-
-      <div
-        className={[
-          "absolute right-0 top-1/2 -translate-y-1/2",
-          "w-[320px] sm:w-[380px]",
-          "transition-transform duration-700 ease-out",
-          mounted ? "translate-x-0" : "translate-x-full",
-        ].join(" ")}
-      >
-        <div className="mr-4 rounded-3xl border border-neutral-200 bg-white shadow-lg overflow-hidden pointer-events-auto">
-          <div className="relative h-[260px] w-full">
-            <Image
-              src={imgSrc}
-              alt="Stephen Curry"
-              fill
-              className="object-cover"
-              priority
-            />
-            <button
-              type="button"
-              aria-label="Close"
-              onClick={() => setDismissed(true)}
-              className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-neutral-800 shadow hover:bg-white"
-            >
-              X
-            </button>
-          </div>
-
-          <div className="p-4">
-            <div className="text-sm font-semibold text-neutral-900">{msg}</div>
-            <div className="mt-1 text-xs text-neutral-500">See you tomorrow.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function HomePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
-
+  const [finalSeconds, setFinalSeconds] = useState<number | null>(null);
   const [seed, setSeed] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [mistakesLeft, setMistakesLeft] = useState(4);
@@ -279,6 +439,9 @@ export default function HomePage() {
   const [shakeSelected, setShakeSelected] = useState(false);
   const [easterClicks, setEasterClicks] = useState(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
+  const [secondsElapsed, setSecondsElapsed] = useState(0);
+  const [stats, setStats] = useState<PlayerStats | null>(null);
+  const [debriefOpen, setDebriefOpen] = useState(false);
 
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
 
@@ -318,6 +481,95 @@ export default function HomePage() {
     if (!puzzle) return;
     setLockedOut(localStorage.getItem(getPlayedKeyForDate(puzzle.date)) === "true");
   }, [puzzle]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+
+    // load stats once per session (client-side only)
+    setStats(loadStats());
+
+    // start timer
+    const startedAt = Date.now();
+    let raf: number | null = null;
+
+    const tick = () => {
+      const secs = Math.floor((Date.now() - startedAt) / 1000);
+      setSecondsElapsed(secs);
+      raf = window.setTimeout(tick, 250);
+    };
+
+    tick();
+
+    return () => {
+      if (raf) window.clearTimeout(raf);
+    };
+  }, [puzzle]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isGameOver) return;
+    // timer will keep updating, but we just stop displaying changes later (we’ll lock it next step)
+  }, [isGameOver, puzzle]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isGameOver) return;
+
+    // prevent double-counting if effect re-runs
+    const doneKey = `baylordle_stats_recorded_${puzzle.date}`;
+    if (localStorage.getItem(doneKey) === "true") return;
+
+    const mistakesUsed = 4 - mistakesLeft;
+    const didWin = solved.length === 4;
+
+    const prev = loadStats();
+    const next: PlayerStats = { ...prev };
+
+    next.totalPlayed += 1;
+    next.totalMistakesUsed += mistakesUsed;
+    next.totalSeconds += secondsElapsed;
+
+    if (didWin) {
+      next.totalCompleted += 1;
+
+      if (!prev.lastCompletedDate) {
+        next.currentStreak = 1;
+      } else {
+        const diff = daysBetween(prev.lastCompletedDate, puzzle.date);
+        next.currentStreak = diff === 1 ? prev.currentStreak + 1 : 1;
+      }
+
+      next.longestStreak = Math.max(next.longestStreak, next.currentStreak);
+      next.lastCompletedDate = puzzle.date;
+    } else {
+      // losing breaks the streak
+      next.currentStreak = 0;
+    }
+
+    saveStats(next);
+    setStats(next);
+    localStorage.setItem(doneKey, "true");
+  }, [puzzle, isGameOver, mistakesLeft, solved.length, secondsElapsed]);
+  
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isGameOver) return;
+    if (finalSeconds !== null) return; // already locked
+    setFinalSeconds(secondsElapsed);
+  }, [puzzle, isGameOver, finalSeconds, secondsElapsed]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isGameOver) return;
+
+    const dismissed = localStorage.getItem(getDebriefDismissKey(puzzle.date)) === "true";
+    if (!dismissed) setDebriefOpen(true);
+  }, [puzzle, isGameOver]);
+
+  function closeDebrief() {
+    if (puzzle) localStorage.setItem(getDebriefDismissKey(puzzle.date), "true");
+    setDebriefOpen(false);
+  }
 
   const allWords = useMemo(() => {
     if (!puzzle) return [];
@@ -541,34 +793,21 @@ export default function HomePage() {
           </div>
 
           {message && <div className="mt-3 text-center text-sm text-neutral-700">{message}</div>}
-
-          {isGameOver && (
-            <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-4 text-sm">
-              <div className="font-semibold">{solved.length === 4 ? "You solved it 🎉" : "Game over"}</div>
-              <button
-                onClick={copyResults}
-                className="mt-3 w-full rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800"
-              >
-                {copied ? "Copied!" : "Copy results"}
-              </button>
-              <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-800">
-                {buildShareText({ date: puzzle.date, solved, mistakesLeft })}
-              </pre>
-            </div>
-          )}
         </div>
-        <CurryCongrats
-          show={isGameOver}
-          didWin={didWin}
-          dateSeed={dateSeed}
-          dateStr={puzzle.date}
-        />
         <button
           type="button"
           aria-label="Easter egg trigger"
           onClick={handleEasterClick}
           className="absolute bottom-0 left-0 h-1/4 w-1/4 opacity-0"
         />
+        {isGameOver && (
+          <button
+            onClick={() => setDebriefOpen(true)}
+            className="mt-4 w-full rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400"
+          >
+            View Debrief
+          </button>
+        )}
         {showEasterEgg && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="w-full max-w-lg rounded-3xl border border-neutral-200 bg-white p-6 shadow-lg">
@@ -586,6 +825,19 @@ export default function HomePage() {
               </button>
             </div>
           </div>
+        )}
+        {puzzle && (
+          <DebriefModal
+            open={debriefOpen}
+            onClose={closeDebrief}
+            puzzleDate={puzzle.date}
+            didWin={didWin}
+            seconds={finalSeconds ?? secondsElapsed}
+            mistakesLeft={mistakesLeft}
+            stats={stats}
+            copied={copied}
+            onCopy={copyResults}
+          />
         )}
       </main>
     </DisclaimerGate>
