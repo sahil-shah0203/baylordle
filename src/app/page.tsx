@@ -780,13 +780,21 @@ export default function HomePage() {
     });
 
     if (oneAway) {
-      setOneAwayPulse((p) => p + 1);
+      // “encouraging” little hop (or pop) on near-miss
+      gridShake.stop();
+      gridShake.set({ x: 0, y: 0, scale: 1 });
+      gridShake.start({
+        y: [0, -8, 0],
+        transition: { duration: 0.28, ease: "easeOut" },
+      });
     } else {
-      gridShake.stop(); // helps if you spam submit
-      gridShake.set({ x: 0 }); // reset immediately
+      // wrong answer shake
+      gridShake.stop();
+      gridShake.set({ x: 0, y: 0, scale: 1 });
       gridShake.start({
         x: [-10, 10, -8, 8, -4, 4, 0],
-        transition: { duration: 0.32 },});
+        transition: { duration: 0.32 },
+      });
     }
 
     setMistakesLeft((m) => Math.max(0, m - 1));
