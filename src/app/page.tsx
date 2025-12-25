@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getOrCreateDeviceId, getPlayedKeyForDate } from "@/lib/device";
 import DisclaimerGate from "@/components/DisclaimerGate";
 import Image from "next/image";
+import { LayoutGroup, motion, useAnimationControls } from "framer-motion";
 
 type Color = "yellow" | "green" | "blue" | "purple";
 
@@ -210,19 +211,6 @@ function CurryCongrats({
   const msg = messages[dateSeed % messages.length];
   const imgSrc = didWin ? "/currywin.png" : "/currylose.png";
 
-  function close() {
-    useEffect(() => {
-      if (show) {
-        setMounted(true);
-        const wasDismissed = localStorage.getItem(getCurryDismissKey(dateStr)) === "true";
-        setDismissed(wasDismissed);
-      } else {
-        setMounted(false);
-      }
-    }, [show, dateStr]);
-    setDismissed(true);
-  }
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden">
       <div className="absolute inset-0 bg-black/10" />
@@ -264,10 +252,63 @@ function CurryCongrats({
   );
 }
 
+function WordTile({
+  word,
+  disabled,
+  selected,
+  onClick,
+  bounceKey = 0,
+  withLayoutId = true,
+}: {
+  word: string;
+  disabled: boolean;
+  selected: boolean;
+  onClick?: () => void;
+  bounceKey?: number;
+  withLayoutId?: boolean;
+}) {
+  const controls = useAnimationControls();
+
+  useEffect(() => {
+    if (!selected) return;
+
+    if (bounceKey > 0) {
+      controls.start({
+        scale: [1, 1.06, 1],
+        transition: { duration: 0.22 },
+      });
+    }
+  }, [bounceKey, selected, controls]);
+
+  return (
+    <motion.div layout="position" layoutId={withLayoutId ? `tile-${word}` : undefined}>
+      <motion.button
+        layout={false} // IMPORTANT: don’t let layout interfere with shaker
+        onClick={onClick}
+        disabled={disabled}
+        animate={controls}
+        className={[
+          "w-full rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
+          "transition",
+          selected
+            ? "bg-neutral-900 text-white border-neutral-900"
+            : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
+          disabled ? "opacity-60 cursor-not-allowed" : "",
+        ].join(" ")}
+      >
+        {word}
+      </motion.button>
+    </motion.div>
+  );
+}
+
 export default function HomePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [loading, setLoading] = useState(true);
-
+  const [revealMode, setRevealMode] = useState(false);
+  const [revealGroupIndex, setRevealGroupIndex] = useState(0);
+  const [revealStepInGroup, setRevealStepInGroup] = useState(0); // 0..4
+  const [revealedGroups, setRevealedGroups] = useState<SolvedGroup[]>([]);
   const [seed, setSeed] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
   const [mistakesLeft, setMistakesLeft] = useState(4);
@@ -276,17 +317,98 @@ export default function HomePage() {
   const [lockedOut, setLockedOut] = useState(false);
   const [copied, setCopied] = useState(false);
   const [guessedSets, setGuessedSets] = useState<string[]>([]);
-  const [shakeSelected, setShakeSelected] = useState(false);
   const [easterClicks, setEasterClicks] = useState(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
-
+  
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
 
   const didWin = solved.length === 4;
   const dateSeed = puzzle ? seedFromDate(puzzle.date) : 0;
+  const gridShake = useAnimationControls();
+  const [oneAwayPulse, setOneAwayPulse] = useState(0);
+  const isLoss = isGameOver && !didWin;
+  const showGrid = !isGameOver || revealMode; 
 
-  const [wrongPulse, setWrongPulse] = useState(0);
-  const [wrongFlash, setWrongFlash] = useState(false);
+  const finalSolutionRows = useMemo(() => {
+  if (!puzzle) return [];
+    // Always puzzle order (NYT style)
+    return puzzle.groups.map((g) => ({
+      id: g.id,
+      title: g.title,
+      color: g.color,
+      words: g.words.map(String),
+    }));
+  }, [puzzle]);
+
+  const solvedIds = useMemo(() => new Set(solved.map((g) => g.id)), [solved]);
+
+  const groupsToReveal = useMemo(() => {
+    if (!puzzle) return [];
+    return puzzle.groups.filter((g) => !solvedIds.has(g.id));
+  }, [puzzle, solvedIds]);
+
+  const activeRevealGroup =
+    puzzle && revealMode ? groupsToReveal[revealGroupIndex] : null;
+
+  const activeRevealWords =
+    activeRevealGroup && revealMode
+      ? activeRevealGroup.words.slice(0, revealStepInGroup).map(String)
+      : [];
+
+  const boardRows = useMemo(() => {
+    if (revealMode) return [...solved, ...revealedGroups];
+    if (isLoss) return finalSolutionRows; // after reveal completes, show full solution
+    return solved;
+  }, [revealMode, solved, revealedGroups, isLoss, finalSolutionRows]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isLoss) return;
+
+    // prevent reruns if user refreshes after losing (optional)
+    const key = `baylordle_board_reveal_done_${puzzle.date}`;
+    if (localStorage.getItem(key) === "true") return;
+    localStorage.setItem(key, "true");
+
+    setRevealMode(true);
+    setRevealGroupIndex(0);
+    setRevealStepInGroup(0);
+    setRevealedGroups([]);
+  }, [puzzle, isLoss]);
+  
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!revealMode) return;
+
+    // finished all groups -> stop reveal after a beat
+    if (revealGroupIndex >= groupsToReveal.length) {
+      const t = setTimeout(() => {
+        setRevealMode(false);
+      }, 800);
+      return () => clearTimeout(t);
+    }
+
+    // step tiles 1..4 into the row
+    if (revealStepInGroup < 4) {
+      const t = setTimeout(() => {
+        setRevealStepInGroup((s) => s + 1);
+      }, 320);
+      return () => clearTimeout(t);
+    }
+
+    // row complete -> lock it into revealedGroups with color, then next group
+    const t = setTimeout(() => {
+      const g = groupsToReveal[revealGroupIndex];
+      setRevealedGroups((prev) => [
+        ...prev,
+        { id: g.id, title: g.title, color: g.color, words: [...g.words] },
+      ]);
+      setRevealGroupIndex((i) => i + 1);
+      setRevealStepInGroup(0);
+    }, 650);
+
+    return () => clearTimeout(t);
+  }, [puzzle, revealMode, revealGroupIndex, revealStepInGroup, groupsToReveal]);
 
   useEffect(() => {
     getOrCreateDeviceId();
@@ -331,7 +453,7 @@ export default function HomePage() {
   }, [allWords, solved]);
 
   function toggleWord(word: string) {
-    if (lockedOut || isGameOver) return;
+    if (lockedOut || isGameOver || revealMode) return;
     setMessage("");
     setSelected((prev) => {
       if (prev.includes(word)) return prev.filter((w) => w !== word);
@@ -382,15 +504,27 @@ export default function HomePage() {
       return overlap === 3;
     });
 
-    setWrongPulse((x) => x + 1);
-    setWrongFlash(true);
-    setTimeout(() => setWrongFlash(false), 220);
+    if (oneAway) {
+      gridShake.stop();
+      gridShake.set({ x: 0, y: 0, scale: 1 });
+      gridShake.start({
+        y: [0, -8, 0],
+        transition: { duration: 0.28, ease: "easeOut" },
+      });
+
+      // optional: makes selected tiles “pop” again
+      setOneAwayPulse((p) => p + 1);
+    } else {
+      gridShake.stop();
+      gridShake.set({ x: 0, y: 0, scale: 1 });
+      gridShake.start({
+        x: [-10, 10, -8, 8, -4, 4, 0],
+        transition: { duration: 0.32 },
+      });
+    }
+
     setMistakesLeft((m) => Math.max(0, m - 1));
     setMessage(oneAway ? "One away…" : "Nope.");
-    if (!oneAway) {
-      setShakeSelected(true);
-      setTimeout(() => setShakeSelected(false), 450);
-    }
   }
 
   function clear() {
@@ -481,43 +615,70 @@ export default function HomePage() {
           )}
 
           <div className="mb-4 space-y-2">
-            {solved.map((g) => (
-              <div key={g.id} className={`rounded-2xl p-3 ${COLOR_CLASS[g.color]} border border-neutral-200`}>
+            {boardRows.map((g) => (
+              <div
+                key={g.id}
+                className={`rounded-2xl p-3 ${COLOR_CLASS[g.color]} border border-neutral-200`}
+              >
                 <div className="text-xs font-semibold tracking-wide">{g.title}</div>
                 <div className="mt-1 text-sm text-neutral-800">{g.words.join(" · ")}</div>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-4 gap-2">
-            {remainingWords.map((word) => {
-              const isSelected = selected.includes(word);
-              return (
-                <button
-                  key={`${word}-${selected.includes(word) ? wrongPulse : 0}`}
-                  onClick={() => toggleWord(word)}
-                  className={[
-                    "rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
-                    "transition",
-                    isSelected && shakeSelected ? "shake" : "",
-                    isSelected
-                      ? "bg-neutral-900 text-white border-neutral-900"
-                      : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
-                    isSelected && wrongFlash ? "baylordle-wrongflash" : "",
-                    isSelected && wrongPulse ? "baylordle-shake" : "",
-                  ].join(" ")}
-                >
-                  {word}
-                </button>
-              );
-            })}
-          </div>
+          {revealMode && activeRevealGroup && (
+            <div className="mb-4 rounded-2xl border border-neutral-200 bg-white p-2">
+              <div className="grid grid-cols-4 gap-2">
+                {activeRevealWords.map((w) => (
+                  <WordTile key={w} word={w} selected={false} disabled={true} />
+                ))}
+              </div>
+            </div>
+          )}
+          {showGrid && (
+            <LayoutGroup>
+              <motion.div animate={gridShake} className="grid grid-cols-4 gap-2">
+                {remainingWords.map((word) => {
+                  const isSelected = selected.includes(word);
+                  const isMovingNow = revealMode && activeRevealWords.includes(word);
+                  return (
+                    <div key={word} className="relative">
+                      {/* base tile that stays in the grid (NO layoutId) */}
+                      <WordTile
+                        word={word}
+                        selected={isSelected}
+                        bounceKey={isSelected ? oneAwayPulse : 0}
+                        disabled={lockedOut || isGameOver || revealMode}
+                        onClick={() => toggleWord(word)}
+                        withLayoutId={false}
+                      />
+
+                      {/* proxy tile that flies up (HAS layoutId), only visible when active */}
+                      {revealMode && (
+                        <div
+                          className="absolute inset-0 pointer-events-none"
+                          style={{ opacity: isMovingNow ? 1 : 0 }}
+                        >
+                          <WordTile
+                            word={word}
+                            selected={false}
+                            disabled={true}
+                            withLayoutId
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </motion.div>
+            </LayoutGroup>
+          )}
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <button
               onClick={clear}
               className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400 disabled:opacity-50"
-              disabled={lockedOut || isGameOver || selected.length === 0}
+              disabled={lockedOut || isGameOver || revealMode || selected.length === 0}
             >
               Clear
             </button>
@@ -526,14 +687,14 @@ export default function HomePage() {
               <button
                 onClick={shuffleNow}
                 className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400 disabled:opacity-50"
-                disabled={lockedOut || isGameOver}
+                disabled={lockedOut || isGameOver || revealMode}
               >
                 Shuffle
               </button>
               <button
                 onClick={submit}
                 className="rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
-                disabled={lockedOut || isGameOver || selected.length !== 4}
+                disabled={lockedOut || isGameOver || revealMode || selected.length !== 4}
               >
                 Submit
               </button>
@@ -558,7 +719,7 @@ export default function HomePage() {
           )}
         </div>
         <CurryCongrats
-          show={isGameOver}
+          show={isGameOver && !revealMode}
           didWin={didWin}
           dateSeed={dateSeed}
           dateStr={puzzle.date}
