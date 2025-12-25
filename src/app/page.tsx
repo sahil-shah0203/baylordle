@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getOrCreateDeviceId, getPlayedKeyForDate } from "@/lib/device";
 import DisclaimerGate from "@/components/DisclaimerGate";
 import Image from "next/image";
+import { LayoutGroup, motion, useAnimationControls } from "framer-motion";
 
 type Color = "yellow" | "green" | "blue" | "purple";
 
@@ -62,6 +63,54 @@ function loadStats(): PlayerStats {
       totalSeconds: 0,
     };
   }
+}
+
+function WordTile({
+  word,
+  disabled,
+  selected,
+  onClick,
+  bounceKey = 0,
+}: {
+  word: string;
+  disabled: boolean;
+  selected: boolean;
+  onClick?: () => void;
+  bounceKey?: number;
+}) {
+  const controls = useAnimationControls();
+
+  useEffect(() => {
+    if (!selected) return;
+
+    if (bounceKey > 0) {
+      controls.start({
+        scale: [1, 1.06, 1],
+        transition: { duration: 0.22 },
+      });
+    }
+  }, [bounceKey, selected, controls]);
+
+  return (
+    <motion.div layout="position" layoutId={`tile-${word}`}>
+      <motion.button
+        layout={false}                  // <— important: don’t let layout touch the shaker
+        onClick={onClick}
+        disabled={disabled}
+        animate={controls}
+        className={[
+          "w-full rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
+          "transition",
+          selected
+            ? "bg-neutral-900 text-white border-neutral-900"
+            : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
+          disabled ? "opacity-60 cursor-not-allowed" : "",
+        ].join(" ")}
+      >
+        {word}
+      </motion.button>
+    </motion.div>
+  );
 }
 
 function saveStats(s: PlayerStats) {
@@ -363,7 +412,6 @@ function buildShareText(args: {
   }
 
   lines.push(`Mistakes: ${mistakesUsed}`);
-  lines.push("baylordle.com");
   return lines.join("\n");
 }
 
@@ -436,21 +484,21 @@ export default function HomePage() {
   const [lockedOut, setLockedOut] = useState(false);
   const [copied, setCopied] = useState(false);
   const [guessedSets, setGuessedSets] = useState<string[]>([]);
-  const [shakeSelected, setShakeSelected] = useState(false);
   const [easterClicks, setEasterClicks] = useState(0);
   const [showEasterEgg, setShowEasterEgg] = useState(false);
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [debriefOpen, setDebriefOpen] = useState(false);
-
   const isGameOver = mistakesLeft === 0 || solved.length === 4;
-
+  const [revealMode, setRevealMode] = useState(false);
+  const [revealGroupIndex, setRevealGroupIndex] = useState(0);
+  const [revealStepInGroup, setRevealStepInGroup] = useState(0); // 0..4
+  const [revealedGroups, setRevealedGroups] = useState<SolvedGroup[]>([]);
   const didWin = solved.length === 4;
-  const dateSeed = puzzle ? seedFromDate(puzzle.date) : 0;
-
-  const [wrongPulse, setWrongPulse] = useState(0);
-  const [wrongFlash, setWrongFlash] = useState(false);
-
+  const isLoss = isGameOver && !didWin;
+  const [oneAwayPulse, setOneAwayPulse] = useState(0);
+  const gridShake = useAnimationControls();
+  
   useEffect(() => {
     getOrCreateDeviceId();
     (async () => {
@@ -508,12 +556,6 @@ export default function HomePage() {
   useEffect(() => {
     if (!puzzle) return;
     if (!isGameOver) return;
-    // timer will keep updating, but we just stop displaying changes later (we’ll lock it next step)
-  }, [isGameOver, puzzle]);
-
-  useEffect(() => {
-    if (!puzzle) return;
-    if (!isGameOver) return;
 
     // prevent double-counting if effect re-runs
     const doneKey = `baylordle_stats_recorded_${puzzle.date}`;
@@ -562,14 +604,117 @@ export default function HomePage() {
     if (!puzzle) return;
     if (!isGameOver) return;
 
-    const dismissed = localStorage.getItem(getDebriefDismissKey(puzzle.date)) === "true";
+    // If loss: board reveal will open the modal AFTER animation finishes
+    if (!didWin) return;
+
+    const dismissed =
+      localStorage.getItem(getDebriefDismissKey(puzzle.date)) === "true";
     if (!dismissed) setDebriefOpen(true);
-  }, [puzzle, isGameOver]);
+  }, [puzzle, isGameOver, didWin]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!isLoss) return;
+
+    // prevent reruns on refresh for same date if you want:
+    const key = `baylordle_board_reveal_done_${puzzle.date}`;
+    if (localStorage.getItem(key) === "true") return;
+
+    localStorage.setItem(key, "true");
+
+    // close modal if it was open
+    setDebriefOpen(false);
+
+    // start reveal
+    setRevealMode(true);
+    setRevealGroupIndex(0);
+    setRevealStepInGroup(0);
+    setRevealedGroups([]);
+  }, [puzzle, isLoss]);
+
+  useEffect(() => {
+    if (!puzzle) return;
+    if (!revealMode) return;
+
+    // Finished all 4 groups -> pause, then open the modal
+    if (revealGroupIndex >= groupsToReveal.length) {
+      const t = setTimeout(() => {
+        setRevealMode(false);
+        setDebriefOpen(true);
+      }, 1200);
+      return () => clearTimeout(t);
+    }
+
+    // Move 1 tile at a time into the active row
+    if (revealStepInGroup < 4) {
+      const t = setTimeout(() => {
+        setRevealStepInGroup((s) => s + 1);
+      }, 320);
+      return () => clearTimeout(t);
+    }
+
+    // Row is complete -> lock it into revealedGroups (colored), then go next group
+    const t = setTimeout(() => {
+      const g = groupsToReveal[revealGroupIndex];
+      setRevealedGroups((prev) => [
+        ...prev,
+        { id: g.id, title: g.title, color: g.color, words: [...g.words] },
+      ]);
+      setRevealGroupIndex((i) => i + 1);
+      setRevealStepInGroup(0);
+    }, 750);
+
+    return () => clearTimeout(t);
+  }, [puzzle, revealMode, revealGroupIndex, revealStepInGroup]);
 
   function closeDebrief() {
     if (puzzle) localStorage.setItem(getDebriefDismissKey(puzzle.date), "true");
     setDebriefOpen(false);
   }
+
+  const finalSolutionRows = useMemo(() => {
+    if (!puzzle) return [];
+    // Always display rows in puzzle order at the end (NYT style)
+    return puzzle.groups.map((g) => ({
+      id: g.id,
+      title: g.title,
+      color: g.color,
+      words: g.words.map(String),
+    }));
+  }, [puzzle]);
+
+  const solvedIds = useMemo(() => new Set(solved.map((g) => g.id)), [solved]);
+
+  const groupsToReveal = useMemo(() => {
+    if (!puzzle) return [];
+    return puzzle.groups.filter((g) => !solvedIds.has(g.id));
+  }, [puzzle, solvedIds]);
+
+  const activeRevealGroup =
+  puzzle && revealMode ? puzzle.groups[revealGroupIndex] : null;
+
+  const activeRevealWords =
+    activeRevealGroup && revealMode
+      ? activeRevealGroup.words.slice(0, revealStepInGroup).map(String)
+      : [];
+
+  const movedOut = useMemo(() => {
+    const s = new Set<string>();
+    for (const g of revealedGroups) for (const w of g.words) s.add(String(w));
+    for (const w of activeRevealWords) s.add(String(w));
+    return s;
+  }, [revealedGroups, activeRevealWords]);
+
+  const boardRows = useMemo(() => {
+    // While reveal is running, show what we have so far + what user solved
+    if (revealMode) return [...solved, ...revealedGroups];
+
+    // After losing, ALWAYS show the full correct puzzle
+    if (isGameOver && !didWin) return finalSolutionRows;
+
+    // Win or in-progress: show user's solved
+    return solved;
+  }, [revealMode, solved, revealedGroups, isGameOver, didWin, finalSolutionRows]);
 
   const allWords = useMemo(() => {
     if (!puzzle) return [];
@@ -634,15 +779,18 @@ export default function HomePage() {
       return overlap === 3;
     });
 
-    setWrongPulse((x) => x + 1);
-    setWrongFlash(true);
-    setTimeout(() => setWrongFlash(false), 220);
+    if (oneAway) {
+      setOneAwayPulse((p) => p + 1);
+    } else {
+      gridShake.stop(); // helps if you spam submit
+      gridShake.set({ x: 0 }); // reset immediately
+      gridShake.start({
+        x: [-10, 10, -8, 8, -4, 4, 0],
+        transition: { duration: 0.32 },});
+    }
+
     setMistakesLeft((m) => Math.max(0, m - 1));
     setMessage(oneAway ? "One away…" : "Nope.");
-    if (!oneAway) {
-      setShakeSelected(true);
-      setTimeout(() => setShakeSelected(false), 450);
-    }
   }
 
   function clear() {
@@ -732,44 +880,69 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="mb-4 space-y-2">
-            {solved.map((g) => (
-              <div key={g.id} className={`rounded-2xl p-3 ${COLOR_CLASS[g.color]} border border-neutral-200`}>
-                <div className="text-xs font-semibold tracking-wide">{g.title}</div>
-                <div className="mt-1 text-sm text-neutral-800">{g.words.join(" · ")}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-4 gap-2">
-            {remainingWords.map((word) => {
-              const isSelected = selected.includes(word);
-              return (
-                <button
-                  key={`${word}-${selected.includes(word) ? wrongPulse : 0}`}
-                  onClick={() => toggleWord(word)}
-                  className={[
-                    "rounded-2xl border px-2 py-4 text-xs font-semibold tracking-wide",
-                    "transition",
-                    isSelected && shakeSelected ? "shake" : "",
-                    isSelected
-                      ? "bg-neutral-900 text-white border-neutral-900"
-                      : "bg-white text-neutral-900 border-neutral-200 hover:border-neutral-400",
-                    isSelected && wrongFlash ? "baylordle-wrongflash" : "",
-                    isSelected && wrongPulse ? "baylordle-shake" : "",
-                  ].join(" ")}
+          <LayoutGroup>
+            {/* On loss reveal, show revealedGroups; otherwise show player's solved */}
+            <div className="mb-4 space-y-2">
+              {boardRows.map((g) => (
+                <motion.div
+                  key={g.id}
+                  layout
+                  initial={{ scale: 0.96, opacity: 0.9 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: "spring", stiffness: 380, damping: 26 }}
+                  className={`rounded-2xl p-3 ${COLOR_CLASS[g.color]} border border-neutral-200`}
                 >
-                  {word}
-                </button>
-              );
-            })}
-          </div>
+                  <div className="text-xs font-semibold tracking-wide">{g.title}</div>
+                  <div className="mt-1 text-sm text-neutral-800">{g.words.join(" · ")}</div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Active reveal row (loss only) */}
+            {revealMode && activeRevealGroup && (
+              <motion.div
+                layout
+                className="mb-4 rounded-2xl border border-neutral-200 bg-white p-2"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+              >
+                <div className="grid grid-cols-4 gap-2">
+                  {activeRevealWords.map((w) => (
+                    <WordTile key={w} word={w} selected={false} disabled={true} />
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Grid */}
+            <motion.div
+              animate={gridShake}
+              className="grid grid-cols-4 gap-2"
+            >
+              {remainingWords
+                .map(String)
+                .filter((w) => !movedOut.has(w))
+                .map((word) => {
+                  const isSelected = selected.includes(word);
+                  return (
+                    <WordTile
+                      key={word}
+                      word={word}
+                      selected={isSelected}
+                      bounceKey={isSelected ? oneAwayPulse : 0}
+                      disabled={lockedOut || isGameOver || revealMode}
+                      onClick={() => toggleWord(word)}
+                    />
+                  );
+                })}
+            </motion.div>
+          </LayoutGroup>
 
           <div className="mt-5 flex items-center justify-between gap-3">
             <button
               onClick={clear}
               className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400 disabled:opacity-50"
-              disabled={lockedOut || isGameOver || selected.length === 0}
+              disabled={lockedOut || isGameOver || revealMode || selected.length === 0}
             >
               Clear
             </button>
@@ -778,14 +951,14 @@ export default function HomePage() {
               <button
                 onClick={shuffleNow}
                 className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400 disabled:opacity-50"
-                disabled={lockedOut || isGameOver}
+                disabled={lockedOut || isGameOver || revealMode}
               >
                 Shuffle
               </button>
               <button
                 onClick={submit}
                 className="rounded-2xl bg-neutral-900 px-4 py-2 text-sm text-white hover:bg-neutral-800 disabled:opacity-50"
-                disabled={lockedOut || isGameOver || selected.length !== 4}
+                disabled={lockedOut || isGameOver || revealMode || selected.length !== 4}
               >
                 Submit
               </button>
@@ -793,6 +966,14 @@ export default function HomePage() {
           </div>
 
           {message && <div className="mt-3 text-center text-sm text-neutral-700">{message}</div>}
+          {isGameOver && (
+            <button
+              onClick={() => setDebriefOpen(true)}
+              className="mt-4 w-full rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400"
+            >
+              View Debrief
+            </button>
+          )}
         </div>
         <button
           type="button"
@@ -800,14 +981,6 @@ export default function HomePage() {
           onClick={handleEasterClick}
           className="absolute bottom-0 left-0 h-1/4 w-1/4 opacity-0"
         />
-        {isGameOver && (
-          <button
-            onClick={() => setDebriefOpen(true)}
-            className="mt-4 w-full rounded-2xl border border-neutral-200 px-4 py-2 text-sm hover:border-neutral-400"
-          >
-            View Debrief
-          </button>
-        )}
         {showEasterEgg && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
             <div className="w-full max-w-lg rounded-3xl border border-neutral-200 bg-white p-6 shadow-lg">
