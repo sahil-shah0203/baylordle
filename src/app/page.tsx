@@ -604,6 +604,7 @@ export default function HomePage() {
               <h1 className="text-xl font-semibold tracking-tight">
                 {formatFullDate(puzzle.date)}
               </h1>
+              <div className="text-sm text-neutral-600">Find four groups of four</div>
             </div>
             <MistakesDots mistakesLeft={mistakesLeft} />
           </header>
